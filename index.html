@@ -120,6 +120,11 @@
             background-color: var(--secondary-color);
         }
         
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
         .admin-section {
             margin-top: 30px;
         }
@@ -208,6 +213,22 @@
             border: 1px solid #f5c6cb;
         }
         
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         footer {
             text-align: center;
             margin-top: 30px;
@@ -242,7 +263,7 @@
             <div class="card">
                 <h2>Cho tớ biết chút về cậu :3</h2>
                 <div class="question">
-                    <label for="name">Use name (đừng để trống nhé):</label>
+                    <label for="name">User name (đừng để trống nhé):</label>
                     <input type="text" id="name" class="form-input" placeholder="Nhập tên của cậu">
                 </div>
                 <div class="question">
@@ -371,7 +392,10 @@
                     </div>
                 </div>
                 
-                <button id="submit-survey">Gửi khảo sát</button>
+                <button id="submit-survey">
+                    <span id="submit-text">Gửi khảo sát</span>
+                    <span id="submit-loading" class="loading" style="display: none;"></span>
+                </button>
             </div>
         </div>
         
@@ -388,6 +412,10 @@
                 
                 <div id="admin-content" style="display: none;">
                     <h3>Thống kê và Phân tích</h3>
+                    <div style="margin-bottom: 15px;">
+                        <button id="refresh-data">🔄 Làm mới dữ liệu</button>
+                        <span id="data-status" style="margin-left: 10px; font-size: 0.9em; color: #666;"></span>
+                    </div>
                     
                     <div class="stats-container">
                         <div class="stat-card">
@@ -427,51 +455,25 @@
                     </div>
                     
                     <div class="admin-actions">
-                        <button id="reset-data">Xóa dữ liệu</button>
-                        <button id="logout-admin">Đăng xuất</button>
+                        <button id="export-data">📥 Xuất dữ liệu</button>
+                        <button id="reset-data">🗑️ Xóa dữ liệu</button>
+                        <button id="logout-admin">🚪 Đăng xuất</button>
                     </div>
                 </div>
             </div>
         </div>
         
         <footer>
-            <p>12B-THPT Quang Trung &copy;Dự án Báo cáo Văn học</p>
+            <p>12B-THPT Quang Trung &copy; Dự án Báo cáo Văn học</p>
         </footer>
     </div>
 
     <script>
-        // Quản lý lưu trữ dữ liệu
-        const StorageManager = {
-            getSurveyData() {
-                return JSON.parse(localStorage.getItem('surveyData')) || [];
-            },
+        // ================= GOOGLE APPS SCRIPT URL =================
+        // THAY THẾ URL NÀY BẰNG URL CỦA BẠN SAU KHI TẠO GOOGLE APPS SCRIPT
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbydaXMepH5_WUV6PZPwvyQNjD37k9NihBDEYx7PlljogYPXHkd49FoFUz5sKEWNvRQ/exec';
+        // ===========================================================
 
-            saveSurveyData(data) {
-                localStorage.setItem('surveyData', JSON.stringify(data));
-            },
-
-            addSurveyResponse(response) {
-                const data = this.getSurveyData();
-                data.push(response);
-                this.saveSurveyData(data);
-                return data;
-            },
-
-            clearSurveyData() {
-                localStorage.removeItem('surveyData');
-                return [];
-            },
-
-            exportData() {
-                return JSON.stringify(this.getSurveyData(), null, 2);
-            },
-
-            hasData() {
-                return this.getSurveyData().length > 0;
-            }
-        };
-
-        // Quản lý chức năng admin
         const AdminManager = {
             ADMIN_PASSWORD: "thonlanh",
             
@@ -483,8 +485,9 @@
             bindEvents() {
                 document.getElementById('login-admin').addEventListener('click', () => this.login());
                 document.getElementById('logout-admin').addEventListener('click', () => this.logout());
-                document.getElementById('export-data').addEventListener('click', () => this.exportData());
+                document.getElementById('refresh-data').addEventListener('click', () => this.updateStats());
                 document.getElementById('reset-data').addEventListener('click', () => this.resetData());
+                document.getElementById('export-data').addEventListener('click', () => this.exportData());
                 
                 document.getElementById('admin-password').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
@@ -513,19 +516,25 @@
                 App.showNotification('Đã đăng xuất!', 'success');
             },
 
-    
-
-            resetData() {
-                if (confirm('Bạn có chắc chắn muốn xóa tất cả dữ liệu? Hành động này không thể hoàn tác.')) {
-                    StorageManager.clearSurveyData();
-                    this.updateStats();
-                    App.showNotification('Tất cả dữ liệu đã được xóa!', 'success');
+            async updateStats() {
+                const statusElement = document.getElementById('data-status');
+                statusElement.textContent = 'Đang tải dữ liệu...';
+                statusElement.style.color = '#ff7e5f';
+                
+                try {
+                    const surveyData = await SheetManager.getSurveyData();
+                    statusElement.textContent = `Dữ liệu cập nhật: ${new Date().toLocaleTimeString()}`;
+                    statusElement.style.color = '#28a745';
+                    
+                    this.displayStats(surveyData);
+                } catch (error) {
+                    statusElement.textContent = 'Lỗi tải dữ liệu';
+                    statusElement.style.color = '#dc3545';
+                    App.showNotification('Lỗi khi tải dữ liệu: ' + error.message, 'error');
                 }
             },
 
-            updateStats() {
-                const surveyData = StorageManager.getSurveyData();
-                
+            displayStats(surveyData) {
                 document.getElementById('total-participants').textContent = surveyData.length;
                 
                 this.updateAgeDistribution(surveyData);
@@ -549,8 +558,8 @@
                 Object.keys(ageGroups).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.age && counts.hasOwnProperty(response.age)) {
-                        counts[response.age]++;
+                    if (response.Age && counts.hasOwnProperty(response.Age)) {
+                        counts[response.Age]++;
                     }
                 });
                 
@@ -580,8 +589,8 @@
                 Object.keys(works).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.q1 && counts.hasOwnProperty(response.q1)) {
-                        counts[response.q1]++;
+                    if (response.Q1 && counts.hasOwnProperty(response.Q1)) {
+                        counts[response.Q1]++;
                     }
                 });
                 
@@ -611,8 +620,8 @@
                 Object.keys(characters).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.q2 && counts.hasOwnProperty(response.q2)) {
-                        counts[response.q2]++;
+                    if (response.Q2 && counts.hasOwnProperty(response.Q2)) {
+                        counts[response.Q2]++;
                     }
                 });
                 
@@ -642,8 +651,9 @@
                 Object.keys(formats).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.q3) {
-                        response.q3.forEach(format => {
+                    if (response.Q3) {
+                        const selectedFormats = response.Q3.split(',').map(f => f.trim());
+                        selectedFormats.forEach(format => {
                             if (counts.hasOwnProperty(format)) {
                                 counts[format]++;
                             }
@@ -677,8 +687,8 @@
                 Object.keys(factors).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.q4 && counts.hasOwnProperty(response.q4)) {
-                        counts[response.q4]++;
+                    if (response.Q4 && counts.hasOwnProperty(response.Q4)) {
+                        counts[response.Q4]++;
                     }
                 });
                 
@@ -708,8 +718,8 @@
                 Object.keys(ratings).forEach(key => counts[key] = 0);
                 
                 surveyData.forEach(response => {
-                    if (response.q5 && counts.hasOwnProperty(response.q5)) {
-                        counts[response.q5]++;
+                    if (response.Q5 && counts.hasOwnProperty(response.Q5)) {
+                        counts[response.Q5]++;
                     }
                 });
                 
@@ -725,10 +735,92 @@
                 });
                 
                 document.getElementById('vietnam-literature').innerHTML = html;
+            },
+
+            async resetData() {
+                if (confirm('Bạn có chắc chắn muốn xóa tất cả dữ liệu? Hành động này không thể hoàn tác.')) {
+                    try {
+                        await SheetManager.clearData();
+                        this.updateStats();
+                        App.showNotification('Đã xóa toàn bộ dữ liệu!', 'success');
+                    } catch (error) {
+                        App.showNotification('Lỗi khi xóa dữ liệu: ' + error.message, 'error');
+                    }
+                }
+            },
+
+            exportData() {
+                SheetManager.exportData();
             }
         };
 
-        // Ứng dụng chính
+        const SheetManager = {
+            async submitSurvey(response) {
+                try {
+                    const payload = {
+                        action: 'submit',
+                        data: response
+                    };
+                    
+                    const result = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    return await result.json();
+                } catch (error) {
+                    console.error('Lỗi kết nối đến Google Sheets:', error);
+                    throw new Error('Không thể kết nối đến server. Vui lòng thử lại sau.');
+                }
+            },
+
+            async getSurveyData() {
+                try {
+                    const response = await fetch(`${SCRIPT_URL}?action=get`);
+                    if (!response.ok) {
+                        throw new Error('Lỗi kết nối');
+                    }
+                    const data = await response.json();
+                    return Array.isArray(data) ? data : [];
+                } catch (error) {
+                    console.error('Lỗi lấy dữ liệu:', error);
+                    throw new Error('Không thể tải dữ liệu từ server');
+                }
+            },
+
+            async clearData() {
+                try {
+                    const response = await fetch(`${SCRIPT_URL}?action=clear`);
+                    return await response.json();
+                } catch (error) {
+                    console.error('Lỗi xóa dữ liệu:', error);
+                    throw new Error('Không thể xóa dữ liệu');
+                }
+            },
+
+            exportData() {
+                // Tạo file JSON từ dữ liệu hiện tại
+                this.getSurveyData().then(data => {
+                    const dataStr = JSON.stringify(data, null, 2);
+                    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                    const url = URL.createObjectURL(dataBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `survey-data-${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    App.showNotification('Đã xuất dữ liệu thành công!', 'success');
+                }).catch(error => {
+                    App.showNotification('Lỗi khi xuất dữ liệu: ' + error.message, 'error');
+                });
+            }
+        };
+
         const App = {
             init() {
                 this.bindEvents();
@@ -762,14 +854,23 @@
                 });
             },
 
-            submitSurvey() {
-                const name = document.getElementById('name').value;
+            async submitSurvey() {
+                const submitBtn = document.getElementById('submit-survey');
+                const submitText = document.getElementById('submit-text');
+                const loading = document.getElementById('submit-loading');
+                
+                const name = document.getElementById('name').value.trim();
                 const age = document.getElementById('age').value;
                 
                 const q1 = document.querySelector('input[name="q1"]:checked');
                 const q2 = document.querySelector('input[name="q2"]:checked');
                 const q4 = document.querySelector('input[name="q4"]:checked');
                 const q5 = document.querySelector('input[name="q5"]:checked');
+                
+                if (!name) {
+                    this.showNotification('Vui lòng nhập tên của bạn!', 'error');
+                    return;
+                }
                 
                 if (!q1 || !q2 || !q4 || !q5) {
                     this.showNotification('Vui lòng trả lời tất cả các câu hỏi bắt buộc!', 'error');
@@ -780,9 +881,7 @@
                 const q3Values = Array.from(q3Checkboxes).map(cb => cb.value);
                 
                 const surveyResponse = {
-                    id: Date.now(),
-                    timestamp: new Date().toISOString(),
-                    name: name || 'Ẩn danh',
+                    name: name,
                     age: age,
                     q1: q1.value,
                     q2: q2.value,
@@ -791,14 +890,32 @@
                     q5: q5.value
                 };
                 
-                StorageManager.addSurveyResponse(surveyResponse);
+                // Hiển thị loading
+                submitBtn.disabled = true;
+                submitText.textContent = 'Đang gửi...';
+                loading.style.display = 'inline-block';
                 
-                this.showNotification('Cảm ơn bạn đã tham gia khảo sát!', 'success');
-                
-                this.resetForm();
-                
-                if (document.getElementById('admin-content').style.display === 'block') {
-                    AdminManager.updateStats();
+                try {
+                    const result = await SheetManager.submitSurvey(surveyResponse);
+                    
+                    if (result.success) {
+                        this.showNotification('Cảm ơn bạn đã tham gia khảo sát! ❤️', 'success');
+                        this.resetForm();
+                        
+                        // Cập nhật thống kê nếu admin đang đăng nhập
+                        if (document.getElementById('admin-content').style.display === 'block') {
+                            AdminManager.updateStats();
+                        }
+                    } else {
+                        throw new Error(result.error || 'Lỗi không xác định');
+                    }
+                } catch (error) {
+                    this.showNotification('Lỗi: ' + error.message, 'error');
+                } finally {
+                    // Ẩn loading
+                    submitBtn.disabled = false;
+                    submitText.textContent = 'Gửi khảo sát';
+                    loading.style.display = 'none';
                 }
             },
 
